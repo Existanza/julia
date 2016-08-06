@@ -71,25 +71,31 @@ ifeq ($(OS),$(BUILD_OS))
 endif
 	echo 1 > $@
 
-$(build_prefix)/manifest/arpack: $(BUILDDIR)/arpack-ng-$(ARPACK_VER)/build-compiled | $(build_shlibdir)
-	$(call make-install,arpack-ng-$(ARPACK_VER),$(ARPACK_MFLAGS))
-ifeq ($(OS), WINNT)
-	mv $(build_shlibdir)/libarpack-2.dll $(build_shlibdir)/libarpack.$(SHLIB_EXT)
+ifneq ($(PATCHELF),patchelf)
+# this is actually required by the stage-arpack target, but there's no easy way to hook into that
+$(BUILDDIR)/arpack-ng-$(ARPACK_VER)/build-compiled: $(PATCHELF)
 endif
-	$(INSTALL_NAME_CMD)libarpack.$(SHLIB_EXT) $(build_shlibdir)/libarpack.$(SHLIB_EXT)
+
+define ARPACK_INSTALL
+	$(call MAKE_INSTALL,$1,$2,$3)
+ifeq ($(OS), WINNT)
+	mv $2/$$(build_shlibdir)/libarpack-2.dll $2/$$(build_shlibdir)/libarpack.$$(SHLIB_EXT)
+endif
+	$(INSTALL_NAME_CMD)libarpack.$(SHLIB_EXT)
 ifeq ($(OS), Linux)
-	for filename in $(build_shlibdir)/libarpack.so* ; do \
-		[ -L $$filename ] || $(PATCHELF_BIN) --set-rpath '$$ORIGIN' $$filename ;\
+	for filename in $2/$$(build_shlibdir)/libarpack.so* ; do \
+		[ -L $$$$filename ] || $$(PATCHELF_BIN) --set-rpath '$$$$ORIGIN' $$$$filename ;\
 	done
 endif
-	echo $(ARPACK_VER) > $@
+endef
 
-ifneq ($(PATCHELF),patchelf)
-$(build_prefix)/manifest/arpack: $(PATCHELF)
-endif
+$(eval $(call staged-install, \
+	arpack,arpack-ng-$(ARPACK_VER), \
+	ARPACK_INSTALL,$(ARPACK_MFLAGS),, \
+	$$(INSTALL_NAME_CMD)libarpack.$$(SHLIB_EXT) $$(build_shlibdir)/libarpack.$$(SHLIB_EXT)))
 
 clean-arpack:
-	-rm -f $(build_prefix)/manifest/arpack $(build_shlibdir)/libarpack.$(SHLIB_EXT)
+	-rm $(BUILDDIR)/arpack-ng-$(ARPACK_VER)/build-configured $(BUILDDIR)/arpack-ng-$(ARPACK_VER)/build-compiled
 	-$(MAKE) -C $(BUILDDIR)/arpack-ng-$(ARPACK_VER) clean
 
 distclean-arpack:
@@ -98,9 +104,12 @@ distclean-arpack:
 		$(SRCDIR)/srccache/arpack-ng-$(ARPACK_VER)-testA.mtx \
 		$(BUILDDIR)/arpack-ng-$(ARPACK_VER)
 
+
 get-arpack: $(SRCDIR)/srccache/arpack-ng-$(ARPACK_VER).tar.gz $(SRCDIR)/srccache/arpack-ng-$(ARPACK_VER)-testA.mtx
 extract-arpack: $(SRCDIR)/srccache/arpack-ng-$(ARPACK_VER)/source-extracted
 configure-arpack: $(BUILDDIR)/arpack-ng-$(ARPACK_VER)/build-configured
 compile-arpack: $(BUILDDIR)/arpack-ng-$(ARPACK_VER)/build-compiled
+# XXX: bug_1315 ARPACK tests fail stochastically
+fastcheck-arpack: #check-arpack
 check-arpack: $(BUILDDIR)/arpack-ng-$(ARPACK_VER)/build-checked
 install-arpack: $(build_prefix)/manifest/arpack
